@@ -1,0 +1,8 @@
+# CDK挂宝机配置文件（统一参数，无需修改）
+# 唯一需要 Actions Secrets 里设置的：FRONT_IP
+
+FRONT_IP=8.138.198.37
+API_TOKEN=twitch-cdk-api-token-2024
+DEBUG=false
+CDK_THREADS=1
+STREAM_URL=https://www.twitch.tv/adnogpu
