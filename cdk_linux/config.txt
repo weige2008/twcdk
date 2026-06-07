@@ -1,8 +1,0 @@
-# CDK挂宝机配置文件
-# 修改前端IP请编辑此处的 FRONT_IP
-
-FRONT_IP=198.44.182.21
-API_TOKEN=twitch-cdk-api-token-2024
-DEBUG=false
-CDK_THREADS=3
-STREAM_URL=https://www.twitch.tv/adnogpu
