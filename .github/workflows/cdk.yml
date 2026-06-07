@@ -2,15 +2,48 @@ name: Twitch CDK Mining
 
 on:
   workflow_dispatch:
+    inputs:
+      FRONT_IP:
+        description: '前端服务器 IP 地址'
+        required: true
+        default: '198.44.182.21'
+      CDK_THREADS:
+        description: '每个 Job 的 CDK 线程数'
+        required: true
+        default: '5'
+      JOB_COUNT:
+        description: '并行 Job 数量'
+        required: true
+        default: '20'
 
 jobs:
-  cdk:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        run: |
+          COUNT=${{ github.event.inputs.JOB_COUNT }}
+          MATRIX=$(python3 -c "import json; print(json.dumps({'job_index': list(range($COUNT))}))")
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+
+  mine:
+    needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 360
-
+    strategy:
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+      fail-fast: false
     steps:
       - uses: actions/checkout@v4
 
       - name: Run CDK Mining
-        working-directory: cdk_linux
-        run: bash run.sh
+        env:
+          FRONT_IP: ${{ github.event.inputs.FRONT_IP }}
+          CDK_THREADS: ${{ github.event.inputs.CDK_THREADS }}
+          JOB_INDEX: ${{ matrix.job_index }}
+          API_TOKEN: ${{ secrets.API_TOKEN }}
+          DEBUG: ${{ vars.DEBUG || 'false' }}
+          STREAM_URL: ${{ vars.STREAM_URL || 'https://www.twitch.tv/adnogpu' }}
+        run: bash Linux/run.sh
