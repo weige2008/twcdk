@@ -14,7 +14,7 @@ on:
       JOB_COUNT:
         description: '并行 Job 数量'
         required: true
-        default: '20'
+        default: '256'
 
 jobs:
   prepare:
