@@ -6,7 +6,7 @@ on:
       FRONT_IP:
         description: '前端服务器 IP 地址'
         required: true
-        default: '198.44.182.21'
+        default: '198.44.182.19'
       CDK_THREADS:
         description: '每个 Job 的 CDK 线程数'
         required: true
