@@ -1,4 +1,4 @@
-name: Twitch CDK Mining
+name: CDK 挖矿任务
 
 on:
   workflow_dispatch:
@@ -6,44 +6,105 @@ on:
       FRONT_IP:
         description: '前端服务器 IP 地址'
         required: true
-        default: '198.44.182.19'
-      CDK_THREADS:
-        description: '每个 Job 的 CDK 线程数'
+        type: string
+        default: '103.42.30.252'
+      THREAD:
+        description: '每个 Job 内的线程数量'
         required: true
-        default: '5'
+        type: string
+        default: '50'
       JOB_COUNT:
         description: '并行 Job 数量'
         required: true
-        default: '256'
-
+        type: string
+        default: '10'
 jobs:
   prepare:
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      front-ip: ${{ steps.config.outputs.front-ip }}
+      thread-count: ${{ steps.config.outputs.thread-count }}
+      job-count: ${{ steps.config.outputs.job-count }}
+      job-indices: ${{ steps.config.outputs.job-indices }}
     steps:
-      - id: set-matrix
+      - name: 解析参数
+        id: config
         run: |
-          COUNT=${{ github.event.inputs.JOB_COUNT }}
-          MATRIX=$(python3 -c "import json; print(json.dumps({'job_index': list(range($COUNT))}))")
-          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          IP="${{ github.event.inputs.FRONT_IP }}"
+          TH="${{ github.event.inputs.THREAD }}"
+          JC="${{ github.event.inputs.JOB_COUNT }}"
 
-  mine:
+          if [ -z "$IP" ]; then
+            echo "错误: FRONT_IP 不能为空"
+            exit 1
+          fi
+          if ! [[ "$TH" =~ ^[0-9]+$ ]] || [ "$TH" -lt 1 ]; then
+            echo "错误: THREAD 不合法 ($TH)"
+            exit 1
+          fi
+          if ! [[ "$JC" =~ ^[0-9]+$ ]] || [ "$JC" -lt 1 ]; then
+            echo "错误: JOB_COUNT 不合法 ($JC)"
+            exit 1
+          fi
+
+          echo "front-ip=${IP}" >> $GITHUB_OUTPUT
+          echo "thread-count=${TH}" >> $GITHUB_OUTPUT
+          echo "job-count=${JC}" >> $GITHUB_OUTPUT
+
+          INDICES=$(python3 -c "import json; print(json.dumps(list(range(int('$JC')))))")
+          echo "job-indices=${INDICES}" >> $GITHUB_OUTPUT
+
+  worker:
     needs: prepare
     runs-on: ubuntu-latest
-    timeout-minutes: 360
     strategy:
-      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+      matrix:
+        idx: ${{ fromJson(needs.prepare.outputs.job-indices) }}
       fail-fast: false
-    steps:
-      - uses: actions/checkout@v4
+      max-parallel: 10
 
-      - name: Run CDK Mining
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 拉取执行脚本
         env:
-          FRONT_IP: ${{ github.event.inputs.FRONT_IP }}
-          CDK_THREADS: ${{ github.event.inputs.CDK_THREADS }}
-          JOB_INDEX: ${{ matrix.job_index }}
-          API_TOKEN: ${{ secrets.API_TOKEN }}
-          DEBUG: ${{ vars.DEBUG || 'false' }}
-          STREAM_URL: ${{ vars.STREAM_URL || 'https://www.twitch.tv/adnogpu' }}
-        run: bash Linux/run.sh
+          REPO_PAT: ${{ secrets.PRIVATE_REPO_PAT }}
+        run: |
+          git clone --quiet --depth 1 \
+            "https://x-access-token:${REPO_PAT}@github.com/xbox-cn/Tw_Cdk.git" \
+            _runner
+
+      - name: 安装 Python 依赖
+        run: |
+          pip install --upgrade pip
+          pip install httpx
+
+      - name: 执行 CDK 挖矿（Job #${{ matrix.idx }}）
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          cd _runner
+          python3 -u main.py ${{ needs.prepare.outputs.front-ip }} ${{ needs.prepare.outputs.thread-count }} 2>&1 | while IFS= read -r line; do
+            if [[ "$line" =~ CDK[[:space:]]*[=:][[:space:]]*([A-Z0-9][A-Z0-9-]+) ]]; then
+              echo "::add-mask::${BASH_REMATCH[1]}"
+            fi
+            echo "$line"
+          done
+
+  summary:
+    needs: [prepare, worker]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: 完成
+        run: |
+          echo "全部 CDK 挖矿任务执行完毕。"
+          echo "FRONT_IP: ${{ needs.prepare.outputs.front-ip }}"
+          echo "线程数: ${{ needs.prepare.outputs.thread-count }}"
+          echo "Job 数: ${{ needs.prepare.outputs.job-count }}"
